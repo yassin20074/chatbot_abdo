@@ -90,7 +90,7 @@ def health_check():
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = "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"
 
     if not api_key:
         raise HTTPException(
