@@ -1,4 +1,4 @@
- import os
+import os
 from typing import Sequence
 from typing_extensions import Annotated, TypedDict
 
