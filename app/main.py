@@ -9,12 +9,8 @@ from app.prompt import SYSTEM_PROMPT_TEMPLATE
 
 load_dotenv()
 
-app = FastAPI(
-    title="Eyewear Recommendation Chatbot API",
-    version="1.0.0"
-)
+app = FastAPI(title="Eyewear Chatbot API")
 
-# السماح لربط الـ API بفرونت إند الموقع (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,46 +19,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# جلب المفتاح بدون إلقاء RuntimeError عند التشغيل الابتدائي
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY is not set in environment variables.")
 
-client = Groq(api_key=GROQ_API_KEY)
+# إنابة الـ Client فقط لو المفتاح موجود
+client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
+
 
 @app.get("/")
 def health_check():
-    return {"status": "online", "service": "Eyewear Chatbot API"}
+    return {
+        "status": "online",
+        "groq_configured": bool(GROQ_API_KEY)
+    }
+
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
-async def chat_recommendation(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest):
+    # التحقق وقت طلب الـ API فقط
+    if not client:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="GROQ_API_KEY is missing in server environment variables.",
+        )
+
     try:
-        # تجهيز الـ System Prompt وحقن الملاحظات فيه
-        notes_content = request.notes if request.notes else "لا يوجد ملاحظات إضافية محدودة حالياً."
-        system_content = SYSTEM_PROMPT_TEMPLATE.format(notes=notes_content)
+        notes_text = (
+            request.notes
+            if request.notes
+            else "لا يوجد ملاحظات أو منتجات معينة ممررة."
+        )
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(notes=notes_text)
 
-        # تجهيز الرسائل للـ LLM
-        messages = [{"role": "system", "content": system_content}]
+        messages = [{"role": "system", "content": system_prompt}]
 
-        # إضافة السجل السابق إن وجد
         if request.chat_history:
             messages.extend(request.chat_history)
 
-        # إضافة سؤال العميل الحالي
         messages.append({"role": "user", "content": request.user_prompt})
 
-        # الاستدعاء لـ Groq API (استخدام llama-3.3-70b-versatile أو gemma2-9b-it)
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            temperature=0.5,
-            max_tokens=600,
+            temperature=0.4,
+            max_tokens=700,
         )
 
-        bot_reply = completion.choices[0].message.content
-        return ChatResponse(reply=bot_reply)
+        return ChatResponse(reply=completion.choices[0].message.content)
 
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing request: {str(e)}"
+            detail=f"Groq API Error: {str(e)}",
         )
