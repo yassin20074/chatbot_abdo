@@ -28,6 +28,12 @@ app.add_middleware(
 )
 
 
+# دالة مساعدة للحصول على المفتاح وتنظيفه من أي مسافات زائدة
+def get_groq_api_key():
+    key = os.getenv("GROQ_API_KEY")
+    return key.strip() if key else None
+
+
 # 1. إعداد الـ State الخاصة بـ LangGraph
 class State(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -37,10 +43,13 @@ class State(TypedDict):
 # 2. دالة الـ Model
 def call_model(state: State):
     notes = state.get("notes", "لا توجد ملاحظات إضافية.")
-    api_key = "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"
+    api_key = get_groq_api_key()
+
+    if not api_key:
+        raise ValueError("GROQ_API_KEY is not set.")
 
     llm = ChatGroq(
-        model="openai/gpt-oss-20b",
+        model="openai/gpt-oss-20b",  # تأكد من استخدام اسم الموديل المتاح في Groq
         groq_api_key=api_key,
         temperature=0.4,
         max_tokens=700
@@ -81,16 +90,17 @@ app_graph = workflow.compile(checkpointer=memory)
 
 @app.get("/")
 def health_check():
-    api_key = "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"
+    api_key = get_groq_api_key()
     return {
         "status": "online",
-        "groq_key_found": bool(api_key)
+        "groq_key_found": bool(api_key),
+        "key_preview": f"{api_key[:7]}..." if api_key else "NOT_FOUND"
     }
 
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    api_key = "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"
+    api_key = get_groq_api_key()
 
     if not api_key:
         raise HTTPException(
@@ -99,7 +109,6 @@ async def chat_endpoint(request: ChatRequest):
         )
 
     try:
-        # استخدام thread_id لاسترجاع وحفظ ذاكرة session_id الممررة من الفرونت إند
         config = {"configurable": {"thread_id": request.session_id}}
 
         input_state = {
