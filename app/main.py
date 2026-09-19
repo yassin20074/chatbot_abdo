@@ -15,7 +15,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from app.schemas import ChatRequest, ChatResponse
 
-load_dotenv()
+ 
 
 app = FastAPI(title="Eyewear Chatbot API")
 
@@ -29,8 +29,14 @@ app.add_middleware(
 
 
 # دالة مساعدة للحصول على المفتاح وتنظيفه من أي مسافات زائدة
+from dotenv import load_dotenv
+
+# تحميل ملف .env المحلي إن وجد فقط، ودون التأثير على متغيرات البيئة في Railway
+load_dotenv(override=False)
+
 def get_groq_api_key():
-    key = os.getenv("GROQ_API_KEY")
+    # البحث عن المفتاح مباشرة من نظام التشغيل
+    key = os.environ.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
     return key.strip() if key else None
 
 
