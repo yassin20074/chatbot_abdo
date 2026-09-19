@@ -81,7 +81,7 @@ app_graph = workflow.compile(checkpointer=memory)
 
 @app.get("/")
 def health_check():
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = "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"
     return {
         "status": "online",
         "groq_key_found": bool(api_key)
