@@ -59,7 +59,7 @@ async def chat_endpoint(request: ChatRequest):
         messages.append({"role": "user", "content": request.user_prompt})
 
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-20b",
             messages=messages,
             temperature=0.4,
             max_tokens=700,
