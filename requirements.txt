@@ -1,5 +1,7 @@
-fastapi
-uvicorn
-groq
-pydantic
-python-dotenv
+fastapi==0.110.0
+uvicorn==0.28.0
+pydantic==2.6.4
+python-dotenv==1.0.1
+langchain-groq
+langchain-core
+langgraph
