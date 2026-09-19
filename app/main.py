@@ -40,7 +40,7 @@ def call_model(state: State):
     api_key = "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"
 
     llm = ChatGroq(
-        model="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",
+        model="openai/gpt-oss-20b",
         groq_api_key=api_key,
         temperature=0.4,
         max_tokens=700
