@@ -1,10 +1,10 @@
 from pydantic import BaseModel
-from typing import Optional, List, Dict
+from typing import Optional
 
 class ChatRequest(BaseModel):
-    user_prompt: str
-    notes: Optional[str] = None  # ملاحظات المنتجات المتوفرة أو تفاصيل النظارات
-    chat_history: Optional[List[Dict[str, str]]] = []  # لسياق المحادثة السابق
+    session_id: str          # معرف المحادثة/العميل (عشان الـ MemorySaver يعرف المحادثة)
+    user_prompt: str         # سؤال العميل
+    notes: Optional[str] = None  # ملاحظات المنتجات/النظارات المتاحة
 
 class ChatResponse(BaseModel):
     reply: str
