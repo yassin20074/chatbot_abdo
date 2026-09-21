@@ -104,7 +104,7 @@ def call_model(state: State):
         raise ValueError("GROQ_API_KEY is missing.")
 
     llm = ChatGroq(
-        model="llama-3.3-70b-versatile",  # التأكد من اسم الموديل الصحيح المتاح على Groq
+        model="openai/gpt-oss-20b",  # التأكد من اسم الموديل الصحيح المتاح على Groq
         groq_api_key=api_key,
         temperature=0.3,
         max_tokens=700
