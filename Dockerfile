@@ -1,25 +1,29 @@
-# 1. استخدام صورة بيثون خفيفة
 FROM python:3.11-slim
 
-# 2. تعيين مجلد العمل الأساسي
-WORKDIR /app
+ 
+WORKDIR /app_root
 
-# 3. إعداد متغيرات بيئة البيثون لتقليل الحجم وإظهار الـ Logs مباشرة
+    
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
+ 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
-# 4. نسخ ملف المتطلبات أولاً لتسريع بناء الطبقات (Layer Caching)
-COPY requirements.txt /app/requirements.txt
+ 
+COPY requirements.txt /app_root/requirements.txt
 
-# 5. تحديث pip وتثبيت الاعتماديات
+ 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r /app/requirements.txt
+    pip install --no-cache-dir -r /app_root/requirements.txt
 
-# 6. نسخ كل ملفات المشروع والمجلدات إلى داخل مجلد العمل /app
-COPY . /app/
+ 
+COPY . /app_root/
 
-# 7. توثيق المنفذ
+ 
 EXPOSE 8000
 
-# 7. أمر التشغيل المستقر لـ Railway
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port $PORT"]
+  
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
