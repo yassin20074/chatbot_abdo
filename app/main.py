@@ -25,6 +25,9 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 from app.schemas import ChatRequest, ChatResponse
 
+import os
+
+os.environ["HF_TOKEN"] = "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"
 load_dotenv(override=False)
 
 app = FastAPI(title="Eyewear & Company Hybrid RAG Chatbot API")
