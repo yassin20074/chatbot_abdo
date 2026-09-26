@@ -15,11 +15,19 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.sqlite import SqliteSaver
 
+# RAG & Hybrid Search Imports
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_community.retrievers import BM25Retriever
+from langchain.retrievers import EnsembleRetriever
+from langchain_community.embeddings import HuggingFaceEmbeddings
+
 from app.schemas import ChatRequest, ChatResponse
 
 load_dotenv(override=False)
 
-app = FastAPI(title="Eyewear Chatbot API")
+app = FastAPI(title="Eyewear & Company Hybrid RAG Chatbot API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +37,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Global Hybrid Retriever Variable
+hybrid_retriever = None
 
 def get_groq_api_key():
     key = os.environ.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
@@ -39,22 +49,63 @@ def clean_llm_response(text: str) -> str:
     """دالة لتنظيف نص الرد من أي رموز مارك داون زائدة أو \\n مكتوبة كـ string"""
     if not text:
         return ""
-    
-    # 1. استبدال الـ \n المكتوبة كـ Literal String بـ Enter حقيقي
     text = text.replace("\\n", "\n")
-    
-    # 2. إزالة رموز النجوم الخاصة بالتنسيق البولد
     text = re.sub(r"\*{1,2}", "", text)
-    
-    # 3. إزالة رموز المارك داون الأخرى
     text = re.sub(r"[#_`~]", "", text)
-    
-    # 4. مسح المسافات والأسطر الفارغة الزائدة
     return text.strip()
 
 
+def initialize_hybrid_rag(pdf_path: str = "company_info.pdf"):
+    """
+    تحميل الـ PDF وتجهيز Hybrid Retriever (BM25 + FAISS Dense)
+    """
+    global hybrid_retriever
+    if not os.path.exists(pdf_path):
+        print(f"Warning: PDF file '{pdf_path}' not found. RAG for company info will be disabled.")
+        return None
+
+    try:
+        print("Loading PDF for RAG...")
+        loader = PyPDFLoader(pdf_path)
+        docs = loader.load()
+
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50
+        )
+        splits = text_splitter.split_documents(docs)
+
+         # hynbrid rag
+        bm25_retriever = BM25Retriever.from_documents(splits)
+        bm25_retriever.k = 3
+
+         
+        embeddings = HuggingFaceEmbeddings(
+            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+        )
+        vectorstore = FAISS.from_documents(splits, embeddings)
+        dense_retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+
+        
+        hybrid_retriever = EnsembleRetriever(
+            retrievers=[bm25_retriever, dense_retriever],
+            weights=[0.5, 0.5]
+        )
+        print("Hybrid RAG initialized successfully.")
+    except Exception as e:
+        print(f"Error initializing RAG: {e}")
+
+
+@app.on_event("startup")
+async def startup_event():
+      
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    pdf_path = os.path.join(base_dir, "RAG_Abdo.pdf")
+    
+    initialize_hybrid_rag(pdf_path)
+
 async def fetch_store_notes() -> str:
-    """جلب الملاحظات بشكل Async ومعالجة الـ JSON ليكون جاهزاً للـ Prompt"""
+    """جلب الملاحظات الخاصة بالنظارات والعدسات"""
     notes_url = "https://api.hi-vision-optics.com/api/physicallenses/notes-for-chatbot"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -62,12 +113,10 @@ async def fetch_store_notes() -> str:
             if response.status_code == 200:
                 data = response.json()
                 
-                # إذا كانت النتيجة List من الكائنات أو الملاحظات
                 if isinstance(data, list):
                     formatted_notes = []
                     for item in data:
                         if isinstance(item, dict):
-                            # استخراج الحقول المهمة
                             title = item.get("title") or item.get("name") or ""
                             content = item.get("notes") or item.get("description") or item.get("content") or str(item)
                             formatted_notes.append(f"- {title}: {content}".strip("- :"))
@@ -75,7 +124,6 @@ async def fetch_store_notes() -> str:
                             formatted_notes.append(str(item))
                     return "\n".join(formatted_notes)
                 
-                # إذا كانت النتيجة Dict يحتوي على مفتاح notes أو بيانات مستقيمة
                 elif isinstance(data, dict):
                     if "notes" in data and isinstance(data["notes"], list):
                         return "\n".join([str(n) for n in data["notes"]])
@@ -93,13 +141,15 @@ async def fetch_store_notes() -> str:
 class State(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     notes: str
+    rag_context: str
 
 
 # 2. دالة الـ Model
 def call_model(state: State):
     notes = state.get("notes", "لا توجد ملاحظات إضافية.")
+    rag_context = state.get("rag_context", "لا تتوفر معلومات إضافية من المستندات.")
+    
     api_key = get_groq_api_key()
-
     if not api_key:
         raise ValueError("GROQ_API_KEY is missing.")
 
@@ -111,20 +161,28 @@ def call_model(state: State):
     )
 
     system_prompt = f"""
-أنت مساعد مبيعات خبير واستشاري لموقع متجر Hi-Vision Optics.
-مهتك مساعدة العملاء في اختيار العدسات المناسبة بناءً على طلبهم والملاحظات المرفقة أدناه.
+أنت مساعد الذكاء الاصطناعي الرسمي لموقع ومتجر Hi-Vision Optics.
 
-ملاحظات وعدسات المتجر المتاحة حالياً:
+لديك مصدرين للمعلومات للاستعانة بهما في الرد:
+
+المصدر الأول: ملاحظات العدسات والنظارات (لإجابة أسئلة المنتجات والترشيحات):
 ---
 {notes}
 ---
-    قواعد التفاعل وهيكلة الرد:
-1. استند بشكل أساسي على الملاحظات المرفقة لتحديد العدسة المناسبة.
-2. عندما تقوم بترشيح منتج للعميل، يرجى تنظيم الرد بحيث يتضمن ما يلي بوضوح:
-   - اسم العدسة: [اسم العدسة كما ورد في الملاحظات]
-   - الوصف والسبب: [وصف مختصر وسبب الترشيح وملاءمتها لاحتياج العميل]
-3. اكتب بنص عربي سلس ومباشر بدون استخدام أي رموز تنسيق غريبة.
-4. إذا لم تجد عدسة مطابقة تماماً في الملاحظات، قم باقتراح الأقرب لاحتياجه بناءً على الملاحظات المتوفرة دون اعتذار.
+
+المصدر الثاني: معلومات الشركة والمستندات (لإجابة الأسئلة عن الشركة، الخدمات، السياسات، إلخ):
+---
+{rag_context}
+---
+
+قواعد التفاعل وتوجيه الرد:
+1. إذا كان سؤال المستخدم عن العدسات، النظارات، وترشيحات المنتجات:
+   - استند على "ملاحظات العدسات والنظارات".
+   - اذكر: اسم العدسة، والوصف والسبب بوضوح.
+2. إذا كان سؤال المستخدم عن الشركة، التعريف بها، السياسات، أو أسئلة عامة عن المؤسسة:
+   - استند بشكل مباشر على "معلومات الشركة والمستندات" المرفقة.
+3. اكتب بنص عربي سلس ومباشر بدون استخدام أي رموز تنسيق مارك داون غريبة.
+4. إذا لم تجد إجابة مباشرة في المصادر، أجب بأقرب معلومة متوفرة بأسلوب لبق.
 """
 
     messages = [SystemMessage(content=system_prompt)] + list(state["messages"])
@@ -150,6 +208,7 @@ def health_check():
     return {
         "status": "online",
         "groq_key_found": bool(api_key),
+        "rag_status": "active" if hybrid_retriever is not None else "inactive",
         "key_preview": f"{api_key[:7]}..." if api_key else "NOT_FOUND"
     }
 
@@ -165,14 +224,20 @@ async def chat_endpoint(request: ChatRequest):
         )
 
     try:
-        # جلب الملاحظات تلقائياً بشكل Async
+        # 1. جلب الملاحظات من الـ API
         fetched_notes = await fetch_store_notes()
 
-        config = {"configurable": {"thread_id": request.session_id}}
+        # 2. البحث في الـ RAG عبر Hybrid Search للرسالة الحالية
+        rag_context = ""
+        if hybrid_retriever:
+            retrieved_docs = hybrid_retriever.invoke(request.user_prompt)
+            rag_context = "\n\n".join([doc.page_content for doc in retrieved_docs])
 
+        config = {"configurable": {"thread_id": request.session_id}}
         input_state = {
             "messages": [HumanMessage(content=request.user_prompt)],
-            "notes": fetched_notes
+            "notes": fetched_notes,
+            "rag_context": rag_context
         }
 
         output = app_graph.invoke(input_state, config=config)
