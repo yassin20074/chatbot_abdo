@@ -1,4 +1,6 @@
 import os
+
+os.environ["HF_TOKEN"] = "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"
 import re
 import sqlite3
 from typing import Sequence
@@ -25,9 +27,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 from app.schemas import ChatRequest, ChatResponse
 
-import os
 
-os.environ["HF_TOKEN"] = "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"
 load_dotenv(override=False)
 
 app = FastAPI(title="Eyewear & Company Hybrid RAG Chatbot API")
@@ -158,7 +158,7 @@ def call_model(state: State):
         raise ValueError("GROQ_API_KEY is missing.")
 
     llm = ChatGroq(
-        model="openai/gpt-oss-20b",
+        model="openai/gpt-oss-20b"",
         groq_api_key=api_key,
         temperature=0.3,
         max_tokens=700
