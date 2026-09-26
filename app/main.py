@@ -98,10 +98,11 @@ def initialize_hybrid_rag(pdf_path: str = "company_info.pdf"):
 
 @app.on_event("startup")
 async def startup_event():
-      
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    pdf_path = os.path.join(base_dir, "RAG_Abdo.pdf")
+ 
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    pdf_path = os.path.join(root_dir, "RAG_Abdo.pdf")
     
+    print(f"Loading PDF from: {pdf_path}")
     initialize_hybrid_rag(pdf_path)
 
 async def fetch_store_notes() -> str:
